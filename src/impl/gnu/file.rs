@@ -4,7 +4,7 @@ use crate::{
 };
 use std::ffi::OsStr;
 use std::os::unix::ffi::OsStrExt;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 
 impl Dialog for OpenSingleFile<'_> {
@@ -105,7 +105,7 @@ fn bytes_to_path_buf(buf: &[u8]) -> PathBuf {
 
 struct ImplementationParams<'a> {
     command: Command,
-    dir: Option<&'a str>,
+    dir: Option<&'a Path>,
     filter: Option<&'a [&'a str]>,
     multiple: bool,
     target: OpenDialogTarget,

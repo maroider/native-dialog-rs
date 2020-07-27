@@ -2,7 +2,7 @@ use crate::{
     r#impl::OpenDialogTarget, Dialog, Error, OpenMultipleFile, OpenSingleDir, OpenSingleFile,
     Result,
 };
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use wfd::{
     DialogError, DialogParams, OpenDialogResult, FOS_ALLOWMULTISELECT, FOS_FILEMUSTEXIST,
     FOS_NOREADONLYRETURN, FOS_OVERWRITEPROMPT, FOS_PATHMUSTEXIST, FOS_PICKFOLDERS,
@@ -62,7 +62,7 @@ impl Dialog for OpenSingleDir<'_> {
 }
 
 struct OpenDialogParams<'a> {
-    dir: Option<&'a str>,
+    dir: Option<&'a Path>,
     filter: Option<&'a [&'a str]>,
     multiple: bool,
     target: OpenDialogTarget,
@@ -90,7 +90,7 @@ fn open_dialog(params: OpenDialogParams) -> Result<Option<OpenDialogResult>> {
     }
 
     let params = DialogParams {
-        default_folder: params.dir.unwrap_or(""),
+        default_folder: params.dir.unwrap_or("".as_ref()),
         file_types,
         options,
         ..Default::default()
