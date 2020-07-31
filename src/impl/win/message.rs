@@ -1,4 +1,12 @@
+use std::borrow::Cow;
+
+#[cfg(feature = "async")]
+use std::{task::Waker, thread};
+
 use crate::{Dialog, MessageAlert, MessageConfirm, MessageType, Result};
+
+#[cfg(feature = "async")]
+use crate::AsyncDialog;
 
 impl Dialog for MessageAlert<'_> {
     type Output = ();
@@ -7,12 +15,27 @@ impl Dialog for MessageAlert<'_> {
         super::process_init();
 
         message_box(MessageBoxParams {
-            title: self.title,
-            text: self.text,
+            title: self.title.into(),
+            text: self.text.into(),
             typ: self.typ,
             ask: false,
         })?;
         Ok(())
+    }
+
+    #[cfg(feature = "async")]
+    fn create_async(self) -> AsyncDialog<Result<Self::Output>> {
+        super::process_init();
+
+        message_box_async(
+            MessageBoxParams {
+                title: self.title.into(),
+                text: self.text.into(),
+                typ: self.typ,
+                ask: false,
+            },
+            |res| res.map(|_| ()),
+        )
     }
 }
 
@@ -23,17 +46,32 @@ impl Dialog for MessageConfirm<'_> {
         super::process_init();
 
         message_box(MessageBoxParams {
-            title: self.title,
-            text: self.text,
+            title: self.title.into(),
+            text: self.text.into(),
             typ: self.typ,
             ask: true,
         })
     }
+
+    #[cfg(feature = "async")]
+    fn create_async(self) -> AsyncDialog<Result<Self::Output>> {
+        super::process_init();
+
+        message_box_async(
+            MessageBoxParams {
+                title: self.title.into(),
+                text: self.text.into(),
+                typ: self.typ,
+                ask: true,
+            },
+            |res| res,
+        )
+    }
 }
 
 struct MessageBoxParams<'a> {
-    title: &'a str,
-    text: &'a str,
+    title: Cow<'a, str>,
+    text: Cow<'a, str>,
     typ: MessageType,
     ask: bool,
 }
@@ -47,12 +85,12 @@ fn message_box(params: MessageBoxParams) -> Result<bool> {
         MessageBoxW, IDYES, MB_ICONERROR, MB_ICONINFORMATION, MB_ICONWARNING, MB_OK, MB_YESNO,
     };
 
-    let text: Vec<u16> = OsStr::new(params.text)
+    let text: Vec<u16> = OsStr::new(params.text.as_ref())
         .encode_wide()
         .chain(once(0))
         .collect();
 
-    let caption: Vec<u16> = OsStr::new(params.title)
+    let caption: Vec<u16> = OsStr::new(params.title.as_ref())
         .encode_wide()
         .chain(once(0))
         .collect();
@@ -71,4 +109,34 @@ fn message_box(params: MessageBoxParams) -> Result<bool> {
         0 => Err(std::io::Error::last_os_error())?,
         x => Ok(x == IDYES),
     }
+}
+
+#[cfg(feature = "async")]
+fn message_box_async<'a, F, T>(
+    params: MessageBoxParams<'a>,
+    map_result: F,
+) -> AsyncDialog<Result<T>>
+where
+    F: FnOnce(Result<bool>) -> Result<T> + Send + Sync + 'static,
+    T: Send + Sync + 'static,
+{
+    let params = MessageBoxParams {
+        title: params.title.into_owned().into(),
+        text: params.text.into_owned().into(),
+        typ: params.typ,
+        ask: params.ask,
+    };
+
+    let (sender, receiver) = crossbeam_channel::bounded(1);
+
+    let spawn = move |waker: Option<Waker>| {
+        thread::spawn(move || {
+            let res = message_box(params);
+            waker.map(|waker| waker.wake());
+            // Discard the result since there isn't anything meaningful to do if there's an error.
+            let _ = sender.send(map_result(res));
+        });
+    };
+
+    AsyncDialog::new(spawn, receiver)
 }
